@@ -1,0 +1,7 @@
+{
+  "files.associations": {
+    "*.py": "python",
+    "wificonnect.h": "c",
+    "scan.h": "c"
+  }
+}

@@ -14,15 +14,17 @@
 #include "scan.h"
 
 #include <inttypes.h>
+#include <string.h>
 
 // Define
 #define TAG "SCAN"
 #define ARPTIMEOUT 5000
-#define ARP_TABLE_SIZE 5
+// Batch size for ARP requests sent in one loop iteration
+#define BATCH_SIZE 5
 
 // functions
 uint32_t switch_ip_orientation (uint32_t *);
-void nextIP(esp_ip4_addr_t *);
+void nextIP(ip4_addr_t *);
 
 // storing
 uint32_t deviceCount = 0; // store the exact online device count after the loop
@@ -47,7 +49,7 @@ void arpScan(void *param) {
 
     // get subnet range
     // uint32_t ip representatione
-    esp_ip4_addr_t target_ipp;
+    ip4_addr_t target_ipp;
     target_ipp.addr = ip_info.netmask.addr & ip_info.ip.addr; // get the first ip of subnet
 
     // calculate subnet max device count
@@ -70,20 +72,20 @@ void arpScan(void *param) {
 
         // ips
         char char_target_ip[IP4ADDR_STRLEN_MAX]; // char ip for printing
-        esp_ip4_addr_t target_ip, last_ip;
+        ip4_addr_t target_ip, last_ip;
         target_ip.addr = target_ipp.addr; // first ip in subnet
         last_ip.addr = (target_ipp.addr)|(~ip_info.netmask.addr); // calculate last ip in subnet
 
         // scan loop for 5 at a time
         while(target_ip.addr != last_ip.addr){
-            esp_ip4_addr_t currAddrs[5]; // save current loop ip
+            ip4_addr_t currAddrs[BATCH_SIZE]; // save current loop ip
             int currCount = 0; // for checking Arp table use
 
             // send ARP request in batches ARP table has limit size
-            for(int i=0; i<ARP_TABLE_SIZE; i++){
+            for(int i=0; i<BATCH_SIZE; i++){
                 nextIP(&target_ip); // next ip
                 if(target_ip.addr != last_ip.addr){
-                    esp_ip4addr_ntoa(&target_ip, char_target_ip, IP4ADDR_STRLEN_MAX);
+                    ip4addr_ntoa_r(&target_ip, char_target_ip, IP4ADDR_STRLEN_MAX);
                     currAddrs[i] = target_ip;
                     ESP_LOGI(TAG, "Success sending ARP to %s", char_target_ip);
 
@@ -97,32 +99,45 @@ void arpScan(void *param) {
 
             // find received ARP resopnd in ARP table
             for(int i=0; i<currCount; i++){
-                ip4_addr_t *ipaddr_ret = NULL;
+                const ip4_addr_t *ipaddr_ret = NULL;
                 struct eth_addr *eth_ret = NULL;
                 char mac[20], char_currIP[IP4ADDR_STRLEN_MAX];
 
                 unsigned int currentIpCount = switch_ip_orientation(&currAddrs[i].addr) - switch_ip_orientation(&target_ipp.addr) - 1; // calculate No. of ip
                 if(etharp_find_addr(NULL, &currAddrs[i], &eth_ret, &ipaddr_ret) != -1){ // find in ARP table
                     // print MAC result for ip
-                    sprintf(mac, "%02X:%02X:%02X:%02X:%02X:%02X",eth_ret->addr[0],eth_ret->addr[1],eth_ret->addr[2],eth_ret->addr[3],eth_ret->addr[4],eth_ret->addr[5]);
-                    esp_ip4addr_ntoa(&currAddrs[i], char_currIP, IP4ADDR_STRLEN_MAX);
+                    if (eth_ret != NULL) {
+                        sprintf(mac, "%02X:%02X:%02X:%02X:%02X:%02X", eth_ret->addr[0], eth_ret->addr[1], eth_ret->addr[2], eth_ret->addr[3], eth_ret->addr[4], eth_ret->addr[5]);
+                    } else {
+                        strcpy(mac, "00:00:00:00:00:00");
+                    }
+                    ip4addr_ntoa_r(&currAddrs[i], char_currIP, IP4ADDR_STRLEN_MAX);
                     ESP_LOGI(TAG, "%s's MAC address is %s", char_currIP, mac);
 
-                    // stroing information to database
-                    deviceInfos[currentIpCount] = (deviceInfo){1, currAddrs[i].addr}; // storing online status and ip address specified by ip No.
-                    memcpy(deviceInfos[currentIpCount].mac, eth_ret->addr, 6); // storing mac address into database specified by ip No.
+                    // storing information to database (with bounds check)
+                    if (deviceInfos != NULL && currentIpCount < maxSubnetDevice && eth_ret != NULL) {
+                        deviceInfos[currentIpCount] = (deviceInfo){1, currAddrs[i].addr, {0}}; // storing online status and ip address specified by ip No.
+                        memcpy(deviceInfos[currentIpCount].mac, eth_ret->addr, 6); // storing mac address into database specified by ip No.
+                    } else if (deviceInfos != NULL && currentIpCount < maxSubnetDevice) {
+                        deviceInfos[currentIpCount] = (deviceInfo){1, currAddrs[i].addr, {0}};
+                    } else {
+                        ESP_LOGE(TAG, "Invalid deviceInfos or currentIpCount out of bounds: %u", currentIpCount);
+                    }
 
                     // count total online device
                     onlineDevicesCount++;
                 }
-                else{ // not fount in arp table
-                    if(deviceInfos[currentIpCount].online == 1 || deviceInfos[currentIpCount].online == 2){ // previously online
-                        deviceInfos[currentIpCount].online = 2; // prvonline
-                    }
-                    else{
-                        deviceInfos[currentIpCount].online = 0; // offline
-
-                        deviceInfos[currentIpCount].ip = currAddrs[i].addr;
+                else{ // not found in arp table
+                    if (deviceInfos != NULL && currentIpCount < maxSubnetDevice) {
+                        if(deviceInfos[currentIpCount].online == 1 || deviceInfos[currentIpCount].online == 2){ // previously online
+                            deviceInfos[currentIpCount].online = 2; // prvonline
+                        }
+                        else{
+                            deviceInfos[currentIpCount].online = 0; // offline
+                            deviceInfos[currentIpCount].ip = currAddrs[i].addr;
+                        }
+                    } else {
+                        ESP_LOGE(TAG, "Invalid deviceInfos or currentIpCount out of bounds (offline): %u", currentIpCount);
                     }
                 }
             }
@@ -164,9 +179,9 @@ uint32_t switch_ip_orientation (uint32_t *ipv4){
 }
 
 // get the next ip in numerical order
-void nextIP(esp_ip4_addr_t *ip){
+void nextIP(ip4_addr_t *ip){
     // reconstruct it to normal order
-    esp_ip4_addr_t normal_ip;
+    ip4_addr_t normal_ip;
     normal_ip.addr = switch_ip_orientation(&ip->addr); // switch to the normal way
 
     // check if ip is the last ip in subnet
