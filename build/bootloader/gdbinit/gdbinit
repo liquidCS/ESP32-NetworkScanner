@@ -1,0 +1,2 @@
+source /home/su/Documents/ceng/bitirme/Sample Projects/ESP32-NetworkScanner/build/bootloader/gdbinit/symbols
+source /home/su/Documents/ceng/bitirme/Sample Projects/ESP32-NetworkScanner/build/bootloader/gdbinit/connect
