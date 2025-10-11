@@ -21,7 +21,7 @@ The goal of this project is to create a network scanner utilizing ARP (Address R
 
 ## To-Do
 
-- [ ] Display vendors along with their corresponding MAC address.
+- [x] Display vendors along with their corresponding MAC address.
 - [ ] Support various subnet masks (theoretically functional, but not yet tested).
 - [ ] Enhance scanning speed.
 - [ ] Improve the web interface for better user experience.

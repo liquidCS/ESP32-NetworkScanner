@@ -49,10 +49,11 @@ const char *TAIL = R"(
 )";
 
 
-// onlineBox ( ip, MAC, Time)
-const char *CHAR_ONLINE_BOX = "<div class=\"box online\"> <div> %s <br> %s <br> Vendor </div> </div>";
+// onlineBox ( ip, MAC, Vendor )
+const char *CHAR_ONLINE_BOX = "<div class=\"box online\"> <div> %s <br> %s <br> %s </div> </div>";
 
 // offlineBox
-const char *CHAR_OFFLINE_BOX = "<div class=\"box offline\"> <div> %s <br> <br> </div> </div>";
+const char *CHAR_OFFLINE_BOX = "<div class=\"box offline\"> <div> %s <br> <br> <br> </div> </div>";
 
-const char *CHAR_PREVONLINE_BOX = "<div class=\"box prevonline\"> <div> %s <br> %s <br> Vendor </div> </div>"
+// prev online ( ip, MAC, Vendor )
+const char *CHAR_PREVONLINE_BOX = "<div class=\"box prevonline\"> <div> %s <br> %s <br> %s </div> </div>"
